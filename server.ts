@@ -1,19 +1,24 @@
 import express, { Request, Response } from 'express';
 import path from 'path';
-import { fileURLToPath } from 'url';
-import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 const app = express();
 
-// 1. Top-Level Request Deserialization (Ordering Guarantee)
+// 1. CORS & Top-Level Request Deserialization
+app.use((_req: Request, res: Response, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, PATCH, DELETE');
+  res.setHeader('Access-Control-Allow-Headers', 'X-Requested-With,Content-Type,Authorization');
+  if (_req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -23,13 +28,15 @@ function getAIClient(): GoogleGenAI {
   if (!aiClient) {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      throw new Error('GEMINI_API_KEY environment variable is required');
+      throw new Error(
+        'GEMINI_API_KEY is not configured. Please add GEMINI_API_KEY in your Vercel Project Settings > Environment Variables.'
+      );
     }
     aiClient = new GoogleGenAI({
       apiKey,
       httpOptions: {
         headers: {
-          'User-Agent': 'aistudio-build',
+          'User-Agent': 'paradigm-journal',
         },
       },
     });
@@ -38,12 +45,16 @@ function getAIClient(): GoogleGenAI {
 }
 
 // 2. Resilient Gemini Model Fallback Ladder
-const MODEL_FALLBACK_LADDER = [
-  'gemini-3.6-flash',
-  'gemini-3.1-flash-lite',
-  'gemini-flash-latest',
-  'gemini-3.7-flash',
+const configuredModel = process.env.GEMINI_MODEL;
+const DEFAULT_LADDER = [
+  'gemini-2.5-flash',
+  'gemini-1.5-flash',
+  'gemini-2.0-flash',
+  'gemini-2.5-pro',
 ];
+const MODEL_FALLBACK_LADDER = configuredModel
+  ? [configuredModel, ...DEFAULT_LADDER.filter((m) => m !== configuredModel)]
+  : DEFAULT_LADDER;
 
 interface FallbackOptions {
   contents: any;
@@ -74,17 +85,17 @@ async function generateContentWithFallback(options: FallbackOptions): Promise<{ 
       const status = err?.status || err?.statusCode || 0;
       const message = err?.message || String(err);
       console.warn(`[Gemini Fallback] Model ${model} failed (status: ${status}): ${message}. Attempting next ladder model...`);
-      // Continues to next model in ladder for recoverable errors (503, 429, 404, 500, etc.)
     }
   }
 
   throw new Error(`All fallback models exhausted. Last error: ${lastError?.message || 'Unknown generation error'}`);
 }
 
-// ================= API ENDPOINTS ================= //
+// ================= API ROUTER ================= //
+const apiRouter = express.Router();
 
 // Health Check
-app.get('/api/health', (_req: Request, res: Response) => {
+apiRouter.get('/health', (_req: Request, res: Response) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
@@ -94,7 +105,7 @@ app.get('/api/health', (_req: Request, res: Response) => {
 });
 
 // AI Reflection Chat Endpoint
-app.post('/api/ai/chat', async (req: Request, res: Response) => {
+apiRouter.post('/ai/chat', async (req: Request, res: Response) => {
   try {
     const data = req.body && typeof req.body === 'object' ? req.body : {};
     const message = typeof data.message === 'string' ? data.message.trim() : '';
@@ -121,7 +132,7 @@ ${context.slice(0, 3000)}
 Tone: Concise, elegant, insightful, no generic platitudes. Use markdown formatting with bullet points or italicized reflective questions.`;
 
     const chatContents: any[] = [];
-    
+
     // Append conversation history
     for (const item of history.slice(-8)) {
       if (item.role === 'user' && item.content) {
@@ -149,13 +160,13 @@ Tone: Concise, elegant, insightful, no generic platitudes. Use markdown formatti
   } catch (error: any) {
     console.error('Error in /api/ai/chat:', error);
     res.status(500).json({
-      error: error?.message || 'Failed to generate AI response. Please check your API key.',
+      error: error?.message || 'Failed to generate AI response. Please check your API key in Vercel settings.',
     });
   }
 });
 
 // AI Brainstorming Board Generator
-app.post('/api/ai/brainstorm', async (req: Request, res: Response) => {
+apiRouter.post('/ai/brainstorm', async (req: Request, res: Response) => {
   try {
     const data = req.body && typeof req.body === 'object' ? req.body : {};
     const topic = typeof data.topic === 'string' ? data.topic.trim() : '';
@@ -231,7 +242,7 @@ Provide 4 to 6 diverse, high-caliber ideas. Return ONLY the raw JSON without mar
 });
 
 // Entry Reflection & Deep Analysis
-app.post('/api/ai/analyze-entry', async (req: Request, res: Response) => {
+apiRouter.post('/ai/analyze-entry', async (req: Request, res: Response) => {
   try {
     const data = req.body && typeof req.body === 'object' ? req.body : {};
     const title = typeof data.title === 'string' ? data.title : '';
@@ -293,7 +304,7 @@ Return valid JSON only.`;
 });
 
 // Expand Seed / Thought Stream into Structured Journal
-app.post('/api/ai/expand-thought', async (req: Request, res: Response) => {
+apiRouter.post('/ai/expand-thought', async (req: Request, res: Response) => {
   try {
     const data = req.body && typeof req.body === 'object' ? req.body : {};
     const rawThought = typeof data.rawThought === 'string' ? data.rawThought.trim() : '';
@@ -336,7 +347,7 @@ Format requirements:
 });
 
 // Dynamic Daily Prompts Generator
-app.post('/api/ai/prompts', async (req: Request, res: Response) => {
+apiRouter.post('/ai/prompts', async (req: Request, res: Response) => {
   try {
     const data = req.body && typeof req.body === 'object' ? req.body : {};
     const mood = typeof data.mood === 'string' ? data.mood : 'clarity';
@@ -395,9 +406,17 @@ Return JSON format:
   }
 });
 
-// 3. Vite Middleware / Production Static Handling
+// Mount router under both /api and / so all paths match whether Vercel preserves or rewrites /api
+app.use('/api', apiRouter);
+app.use('/', apiRouter);
+
+// Export app for Vercel Serverless Function deployment
+export default app;
+
+// 3. Vite Middleware / Production Static Handling for Local Dev
 async function bootstrap() {
   if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
@@ -416,7 +435,10 @@ async function bootstrap() {
   });
 }
 
-bootstrap().catch((err) => {
-  console.error('Failed to start server:', err);
-  process.exit(1);
-});
+// Only launch standalone HTTP server when not running in Vercel Serverless environment
+if (!process.env.VERCEL) {
+  bootstrap().catch((err) => {
+    console.error('Failed to start server:', err);
+    process.exit(1);
+  });
+}
