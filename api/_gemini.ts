@@ -32,7 +32,6 @@ const DEFAULT_LADDER = [
   'gemini-3.5-flash',
   'gemini-flash-latest',
   'gemini-3.1-flash-lite',
-  'gemini-3.1-pro-preview',
 ];
 export const MODEL_FALLBACK_LADDER = configuredModel
   ? [configuredModel, ...DEFAULT_LADDER.filter((m) => m !== configuredModel)]
