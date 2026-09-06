@@ -203,12 +203,37 @@ function PrivateDashboard({ user }: { user: AppUser }) {
     setActiveTab('chat');
   };
 
+  // Safe API helper that parses errors gracefully without throwing JSON syntax errors
+  const safeApiCall = async <T = any,>(url: string, payload: any): Promise<T> => {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) {
+      let errMessage = `Request failed with status ${res.status}`;
+      try {
+        const errData = await res.json();
+        errMessage = errData.error || errMessage;
+      } catch {
+        const text = await res.text();
+        if (text) errMessage = text;
+      }
+      throw new Error(errMessage);
+    }
+
+    return res.json();
+  };
+
   // AI Chat message sender (multi-turn conversation with Firestore persistence)
-  const handleSendChatMessage = async (text: string, persona: string, context?: string) => {
+  const handleSendChatMessage = async (text: string, persona: string = 'reflective', context?: string) => {
+    if (!text.trim() || !user) return;
+
     const userMsg: ChatMessage = {
       id: `msg-${Date.now()}`,
       role: 'user',
-      content: text,
+      content: text.trim(),
       timestamp: new Date().toISOString(),
       relatedEntryId: chatContextEntry?.id,
     };
@@ -218,21 +243,12 @@ function PrivateDashboard({ user }: { user: AppUser }) {
     await saveUserChat(user.uid, userMsg, user.isDemo);
 
     try {
-      const res = await fetch('/api/ai/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: text,
-          history: chatMessages.slice(-8).map((m) => ({ role: m.role, content: m.content })),
-          context: context || '',
-          persona,
-        }),
+      const data = await safeApiCall<{ reply: string }>('/api/ai/chat', {
+        message: text,
+        history: chatMessages.slice(-8).map((m) => ({ role: m.role, content: m.content })),
+        context: context || '',
+        persona,
       });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Chat reflection failed');
-      }
 
       const assistantMsg: ChatMessage = {
         id: `msg-${Date.now() + 1}`,
@@ -257,16 +273,7 @@ function PrivateDashboard({ user }: { user: AppUser }) {
   // Generate Brainstorm Board
   const handleGenerateBrainstorm = async (topic: string, framework: string): Promise<BrainstormBoard | null> => {
     try {
-      const res = await fetch('/api/ai/brainstorm', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic, framework }),
-      });
-
-      const json = await res.json();
-      if (!res.ok) {
-        throw new Error(json.error || 'Failed to generate brainstorm');
-      }
+      const json = await safeApiCall<{ data?: any }>('/api/ai/brainstorm', { topic, framework });
 
       const newBoard: BrainstormBoard = {
         id: `board-${Date.now()}`,
@@ -308,15 +315,7 @@ function PrivateDashboard({ user }: { user: AppUser }) {
   // Expand thought with AI
   const handleExpandThought = async (rawThought: string): Promise<string> => {
     try {
-      const res = await fetch('/api/ai/expand-thought', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rawThought }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to expand thought');
-      }
+      const data = await safeApiCall<{ expandedText?: string }>('/api/ai/expand-thought', { rawThought });
       return data.expandedText || rawThought;
     } catch (err: any) {
       addToast({
@@ -331,15 +330,7 @@ function PrivateDashboard({ user }: { user: AppUser }) {
   // Analyze entry with AI
   const handleAnalyzeAi = async (title: string, content: string) => {
     try {
-      const res = await fetch('/api/ai/analyze-entry', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, content }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Analysis failed');
-      }
+      const data = await safeApiCall<{ analysis?: any }>('/api/ai/analyze-entry', { title, content });
       return data.analysis;
     } catch (err: any) {
       addToast({
@@ -354,15 +345,7 @@ function PrivateDashboard({ user }: { user: AppUser }) {
   // Generate dynamic AI prompts
   const handleGenerateAiPrompts = async (mood: string, focus: string): Promise<JournalPrompt[]> => {
     try {
-      const res = await fetch('/api/ai/prompts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mood, focusArea: focus }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to generate prompts');
-      }
+      const data = await safeApiCall<{ prompts?: JournalPrompt[] }>('/api/ai/prompts', { mood, focusArea: focus });
       return data.prompts || [];
     } catch (err: any) {
       addToast({

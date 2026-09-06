@@ -40,11 +40,19 @@ export function FloatingAIWidget({ onOpenFullChat, recentContext, onSavedAsEntry
         }),
       });
 
-      const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'Failed to generate response');
+        let errMessage = 'Failed to generate response';
+        try {
+          const errData = await res.json();
+          errMessage = errData.error || errMessage;
+        } catch {
+          const text = await res.text();
+          if (text) errMessage = text;
+        }
+        throw new Error(errMessage);
       }
 
+      const data = await res.json();
       setQuickDialogue((prev) => [...prev, { role: 'assistant', text: data.reply }]);
     } catch (err: any) {
       setQuickDialogue((prev) => [
