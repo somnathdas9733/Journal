@@ -1,12 +1,12 @@
 import express, { Request, Response } from 'express';
 import path from 'path';
 import dotenv from 'dotenv';
-import healthHandler from './api/health';
-import chatHandler from './api/ai/chat';
-import brainstormHandler from './api/ai/brainstorm';
-import analyzeHandler from './api/ai/analyze-entry';
-import expandHandler from './api/ai/expand-thought';
-import promptsHandler from './api/ai/prompts';
+import healthHandler from './api/health.ts';
+import chatHandler from './api/ai/chat.ts';
+import brainstormHandler from './api/ai/brainstorm.ts';
+import analyzeHandler from './api/ai/analyze-entry.ts';
+import expandHandler from './api/ai/expand-thought.ts';
+import promptsHandler from './api/ai/prompts.ts';
 
 dotenv.config();
 

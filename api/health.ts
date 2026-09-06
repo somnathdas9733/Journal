@@ -1,4 +1,4 @@
-import { setCorsHeaders } from './_gemini';
+import { setCorsHeaders } from './_gemini.ts';
 
 export default async function handler(req: any, res: any) {
   setCorsHeaders(res);
