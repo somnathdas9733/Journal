@@ -1,0 +1,6 @@
+{
+  "name": "Paradigm Journal",
+  "description": "A structured cognitive journal and ideation workspace designed with Geometric Balance aesthetics, featuring Socratic AI reflections, multi-framework brainstorming canvases, mood analytics, and prompt generation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
